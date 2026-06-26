@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cricket Fielding Simulator</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #222;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 { margin-bottom: 10px; color: #4CAF50; }
+        .setup-container {
+            background-color: #333;
+            padding: 15px 25px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+        input, button {
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: none;
+            font-size: 14px;
+        }
+        input[type="number"] { width: 60px; text-align: center; }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        button:hover { background-color: #45a049; }
+        
+        /* The Ground (Scales real dimensions down) */
+        #field {
+            width: 600px;
+            height: 650px;
+            background-color: #1e7127;
+            border: 4px solid #fff; /* Boundary line */
+            border-radius: 50% / 45%; /* Slightly oval shape like a real ground */
+            position: relative;
+            box-shadow: inset 0 0 40px rgba(0,0,0,0.4), 0 10px 20px rgba(0,0,0,0.5);
+            overflow: visible;
+        }
+
+        /* 30-Yard Circle (Scaled proportionally) */
+        .thirty-yard-circle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 250px;
+            height: 270px;
+            border: 2px dashed rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        /* The Pitch (Scaled: 22 yards long) */
+        .pitch {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 22px;
+            height: 80px;
+            background-color: #d2b48c;
+            border: 1px solid #fff;
+        }
+        /* Creases */
+        .pitch::before, .pitch::after {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 2px;
+            background-color: #fff;
+        }
+        .pitch::before { top: 8px; } /* Bowling crease top */
+        .pitch::after { bottom: 8px; } /* Bowling crease bottom */
+
+        /* Draggable Player Token */
+        .player {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            background-color: #e74c3c;
+            color: white;
+            border-radius: 50%;
+            border: 2px solid white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: move;
+            user-select: none;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+            z-index: 10;
+        }
+        
+        /* Player Label styling */
+        .player-label {
+            position: absolute;
+            bottom: -22px;
+            background-color: rgba(0,0,0,0.75);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            white-space: nowrap;
+            pointer-events: none;
+            border: 1px solid #555;
+        }
+        
+        #player-config-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            max-width: 800px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+        .name-input-group {
+            background: #333;
+            padding: 5px 10px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 12px;
+        }
+        .name-input-group input {
+            padding: 4px;
+            width: 90px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Cricket Fielding Planner</h1>
+    
+    <div class="setup-container">
+        <label for="playerCount">Number of Players:</label>
+        <input type="number" id="playerCount" value="11" min="1" max="15">
+        <button onclick="setupSim()">Generate Fielders</button>
+    </div>
+
+    <div id="player-config-list"></div>
+
+    <div id="field">
+        <div class="thirty-yard-circle"></div>
+        <div class="pitch"></div>
+    </div>
+
+    <script>
+        function setupSim() {
+            const count = parseInt(document.getElementById('playerCount').value) || 11;
+            const configList = document.getElementById('player-config-list');
+            const field = document.getElementById('field');
+            
+            // Clear previous fielders and inputs (keeping pitch & circle)
+            configList.innerHTML = '';
+            document.querySelectorAll('.player').forEach(p => p.remove());
+
+            for (let i = 1; i <= count; i++) {
+                const defaultName = `Player ${i}`;
+                
+                // 1. Create the Custom Name Inputs
+                const group = document.createElement('div');
+                group.className = 'name-input-group';
+                group.innerHTML = `
+                    <label>${i}:</label>
+                    <input type="text" id="input-p-${i}" value="${defaultName}" oninput="updateName(${i})">
+                `;
+                configList.appendChild(group);
+
+                // 2. Create the Draggable Player Tokens on Field
+                const player = document.createElement('div');
+                player.className = 'player';
+                player.id = `player-${i}`;
+                player.innerText = i; // Show player number in the circle
+                
+                // Spawn them in a neat line outside the boundary to start
+                player.style.left = `${(i * 35) % 550 + 20}px`;
+                player.style.top = `${Math.floor((i * 35) / 550) * 35 + 10}px`;
+
+                // Add Name Tag under the token
+                const label = document.createElement('div');
+                label.className = 'player-label';
+                label.id = `label-p-${i}`;
+                label.innerText = defaultName;
+                player.appendChild(label);
+
+                field.appendChild(player);
+                makeDraggable(player);
+            }
+        }
+
+        // Real-time name updating
+        function updateName(index) {
+            const newName = document.getElementById(`input-p-${index}`).value;
+            const label = document.getElementById(`label-p-${index}`);
+            if (label) {
+                label.innerText = newName || `Player ${index}`;
+            }
+        }
+
+        // Drag and Drop Logic
+        function makeDraggable(element) {
+            let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+            
+            element.onmousedown = dragMouseDown;
+
+            function dragMouseDown(e) {
+                e = e || window.event;
+                e.preventDefault();
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                document.onmouseup = closeDragElement;
+                document.onmousemove = elementDrag;
+            }
+
+            function elementDrag(e) {
+                e = e || window.event;
+                e.preventDefault();
+                pos1 = pos3 - e.clientX;
+                pos2 = pos4 - e.clientY;
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                
+                // Boundary restrictions to keep tokens inside/around the canvas
+                let newTop = element.offsetTop - pos2;
+                let newLeft = element.offsetLeft - pos1;
+                
+                const field = document.getElementById('field');
+                if(newTop >= 0 && newTop <= (field.clientHeight - 24)) {
+                    element.style.top = newTop + "px";
+                }
+                if(newLeft >= 0 && newLeft <= (field.clientWidth - 24)) {
+                    element.style.left = newLeft + "px";
+                }
+            }
+
+            function closeDragElement() {
+                document.onmouseup = null;
+                document.onmousemove = null;
+            }
+        }
+
+        // Initialize on page load
+        window.onload = setupSim;
+    </script>
+</body>
+</html>
